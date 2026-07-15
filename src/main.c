@@ -8,11 +8,14 @@
 #include "offsets.h"
 
 
-#define VERSION "1.0.0"
+#define VERSION "1.0.1"
 #define GAME_BUILD "4.1.1.7209685"
 
 #define ROLL_SENSITIVITY 2.f
 #define ZOOM_FACTOR 0.25f
+
+#define CONTROLLER_ROLL_SPEED 2.f
+#define CONTROLLER_DEADZONE 4000
 
 
 static pid_t g_pid = 0;
@@ -24,6 +27,9 @@ static float* g_roll;
 static atomic_int g_mouse_delta_y;
 static atomic_int g_mouse_wheel_y;
 static atomic_int g_roll_keydown = 0;
+static atomic_int g_controller_right_stick_y;
+static atomic_int g_controller_right_stick_axis_motion_y = 0;
+static atomic_int g_controller_right_stick_button_down = 0;
 
 static BindingSet g_bs;
 static ActionBindings* g_binds[1];
@@ -59,12 +65,27 @@ void H_SaveToInputConfigFile_CallSite(undefined8 p1, undefined8 p2, undefined8 p
 
 float H_CalculateCameraAngle_CallSite(void* pCameraObject, uint8_t angle)
 {
-	int wheel = atomic_exchange(&g_mouse_wheel_y, 0);
 	g_zoom = (float*)((uint8_t*)pCameraObject + 0x58);
-	*g_zoom += -((float)wheel * ZOOM_FACTOR);
-	
+	int right_stick_button_down = atomic_load(&g_controller_right_stick_button_down);
+	int right_stick_axis_motion_y = atomic_load(&g_controller_right_stick_axis_motion_y);
+	int right_stick_y;
+	if (right_stick_button_down && right_stick_axis_motion_y)
+	{
+		int right_stick_y = atomic_load(&g_controller_right_stick_y);
+		if (right_stick_y > -CONTROLLER_DEADZONE && right_stick_y < CONTROLLER_DEADZONE)
+			right_stick_y = 0;
+
+		*g_zoom += -((float)right_stick_y / 32767.f * ZOOM_FACTOR);
+		return O_CalculateCameraAngle(pCameraObject, angle);
+	}
+	else
+	{
+		int zoom = atomic_exchange(&g_mouse_wheel_y, 0);
+		*g_zoom += -((float)zoom * ZOOM_FACTOR);
+	}
+
 	int roll_keydown = atomic_load(&g_roll_keydown);
-	if (!roll_keydown)
+	if (!roll_keydown && !right_stick_axis_motion_y)
 	{
 		if (O_SDL_GetRelativeMouseMode() == SDL_TRUE)
 			O_SDL_SetRelativeMouseMode(SDL_FALSE);
@@ -73,10 +94,24 @@ float H_CalculateCameraAngle_CallSite(void* pCameraObject, uint8_t angle)
 	if (O_SDL_GetRelativeMouseMode() != SDL_TRUE)
 		O_SDL_SetRelativeMouseMode(SDL_TRUE);
 
-	int delta = atomic_exchange(&g_mouse_delta_y, 0);
 	g_roll = (float*)((uint8_t*)pCameraObject + 0x164);
 	float roll = *g_roll;
-	roll += (float)delta * ROLL_SENSITIVITY;
+
+	if (right_stick_axis_motion_y)
+	{
+		int val = atomic_load(&g_controller_right_stick_y);
+		if (val > -CONTROLLER_DEADZONE && val < CONTROLLER_DEADZONE)
+			val = 0;
+
+		float norm = (float)val / 32767.f;
+		roll += norm * CONTROLLER_ROLL_SPEED;
+	}
+	else
+	{
+		int delta = atomic_exchange(&g_mouse_delta_y, 0);
+		roll += (float)delta * ROLL_SENSITIVITY;
+	}
+
 	if (roll > 89.f)
 		roll = 89.f;
 	else
@@ -262,6 +297,26 @@ int SDL_PollEvent(SDL_Event* event)
 				if ((b->type == BINDING_KEY) && event->key.keysym.scancode == b->scancode)
 					atomic_store(&g_roll_keydown, 0);
 			}
+		}
+		else if ((event->type == SDL_CONTROLLERAXISMOTION) && event->caxis.axis == SDL_CONTROLLER_AXIS_RIGHTY)
+		{
+			int16_t val = event->caxis.value;
+			if (val > CONTROLLER_DEADZONE || val < -CONTROLLER_DEADZONE)
+        	{
+				atomic_store(&g_controller_right_stick_axis_motion_y, 1);
+				atomic_store(&g_controller_right_stick_y, val);
+			}
+			else
+        		atomic_store(&g_controller_right_stick_axis_motion_y, 0);
+			return 0;
+		}
+		else if ((event->type == SDL_CONTROLLERBUTTONDOWN) && event->cbutton.button == SDL_CONTROLLER_BUTTON_RIGHTSTICK)
+		{
+			atomic_store(&g_controller_right_stick_button_down, 1);
+		}
+		else if ((event->type == SDL_CONTROLLERBUTTONUP) && event->cbutton.button == SDL_CONTROLLER_BUTTON_RIGHTSTICK)
+		{
+			atomic_store(&g_controller_right_stick_button_down, 0);
 		}
 	}
 
