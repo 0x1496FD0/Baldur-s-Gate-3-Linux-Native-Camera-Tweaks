@@ -1,1 +1,0 @@
-/usr/bin/cc -fPIC -shared -Wl,--dependency-file=CMakeFiles/linux_native_camera_tweaks.dir/link.d -Wl,-soname,liblinux_native_camera_tweaks.so -o liblinux_native_camera_tweaks.so CMakeFiles/linux_native_camera_tweaks.dir/src/main.c.o  -ldl

@@ -1,3 +1,0 @@
-/home/user/bg3-linux-native-camera-tweaks/build/CMakeFiles/linux_native_camera_tweaks.dir
-/home/user/bg3-linux-native-camera-tweaks/build/CMakeFiles/edit_cache.dir
-/home/user/bg3-linux-native-camera-tweaks/build/CMakeFiles/rebuild_cache.dir
