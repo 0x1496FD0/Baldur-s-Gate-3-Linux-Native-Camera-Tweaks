@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"/home/user/bg3-linux-native-camera-tweaks/build/cmake_install.cmake"
+	],
+	"Parallel" : false
+}
