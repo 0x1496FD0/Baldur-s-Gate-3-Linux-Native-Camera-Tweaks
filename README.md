@@ -14,12 +14,6 @@ A native Linux mod for **Baldur's Gate 3** that reworks the game's camera system
 
 ---
 
-## Known issues
-
-- Some special keys that require a modifier depending on your keyboard layout (`ö`, `$`, `"`, `ü`, etc.) don't work. Unlikely to be an issue for camera rotation, but feel free to open an issue if it affects you.
-
----
-
 ## Credits and permissions
 
 - Mod created by **Biiinks78**
