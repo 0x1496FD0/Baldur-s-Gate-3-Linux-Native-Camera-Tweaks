@@ -3,8 +3,8 @@
 A native Linux mod for **Baldur's Gate 3** that reworks the game's camera system: rotation around your character on any axis and no more zoom min/max limit.
 
 ![Version](https://img.shields.io/badge/version-1.0.21-blue)
-![Platform](https://img.shields.io/badge/platform-Linux-green)
-![Game Build1](https://img.shields.io/badge/BG3%20build-4.1.1.7209685-orange)
+![Platform](https://img.shields.io/badge/Linux-green)
+![Game Build1](https://img.shields.io/badge/BG3-4.1.1.7209685-orange)
 ![Game Build2](https://img.shields.io/badge/4.1.1.7398727-orange)
 
 ---
