@@ -1,11 +1,13 @@
 #pragma once
 
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <stdint.h>
 #include <string.h>
 #include <stdio.h>
 #include <link.h>
+#include <fcntl.h>
 
 
 typedef struct
@@ -14,14 +16,53 @@ typedef struct
     uint64_t base;
 } ModuleBaseCtx;
 
+#define MAX_IDA_PATTERN_LENGTH 512
+typedef struct
+{
+    uint16_t length;
+    uint8_t bytes[MAX_IDA_PATTERN_LENGTH];
+    char mask[MAX_IDA_PATTERN_LENGTH];
+} Pattern;
+
+static uint8_t HexCharToByte(char c)
+{
+    if ('0' <= c && c <= '9') return c - '0';
+    if ('A' <= c && c <= 'F') return c - 'A' + 10;
+    if ('a' <= c && c <= 'f') return c - 'a' + 10;
+    return 0;
+}
+
+static void BuildPattern(Pattern* p, const char* ida_pattern)
+{
+    p->length = 0;
+    while (*ida_pattern && p->length < MAX_IDA_PATTERN_LENGTH)
+	{
+        while (*ida_pattern == ' ')
+			ida_pattern++;
+        if (ida_pattern[0] == '?' && ida_pattern[1] == '?')
+		{
+            p->bytes[p->length] = 0xAA;
+            p->mask[p->length++] = '?';
+            ida_pattern += 2;
+            continue;
+        }
+        p->bytes[p->length] = (uint8_t)((HexCharToByte(ida_pattern[0]) << 4) | HexCharToByte(ida_pattern[1]));
+        p->mask[p->length++] = 'x';
+        ida_pattern += 2;
+    }
+}
 
 static inline int ModuleBase_Callback(struct dl_phdr_info* info, size_t size, void* data)
 {
     (void)size;
     ModuleBaseCtx* ctx = (ModuleBaseCtx*)data;
-    if (info->dlpi_name[0] == '\0' ||
-        (ctx->substr && strstr(info->dlpi_name, ctx->substr)))
-	{
+
+    uint8_t match = ctx->substr
+        ? (strstr(info->dlpi_name, ctx->substr) != 0)
+        : (info->dlpi_name[0] == '\0');
+
+    if (match)
+    {
         ctx->base = info->dlpi_addr;
         return 1;
     }
@@ -117,4 +158,89 @@ static void* PatchCallSite(void* callsite, void* trampoline, void* trampoline_ta
 
 	mprotect((void*)page_start, num_pages * page_size, PROT_READ | PROT_EXEC);
 	return original_target;
+}
+
+static uint8_t* MapSelfExe(size_t* out_size)
+{
+    int fd = open("/proc/self/exe", O_RDONLY);
+	if (fd < 0)
+        return 0;
+
+    struct stat st;
+    if (fstat(fd, &st) != 0)
+    {
+        close(fd);
+        return 0;
+	}
+
+    void* map = mmap(0, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+	close(fd);
+
+    if (map == MAP_FAILED)
+        return 0;
+
+    *out_size = st.st_size;
+    return (uint8_t*)map;
+}
+
+static uint64_t GetSectionAddress(const char* section, uint64_t* size_buffer)
+{
+    size_t file_size = 0;
+    uint8_t* file = MapSelfExe(&file_size);
+    if (!file)
+        return 0;
+
+    uint64_t base = GetModuleBase(0);
+
+    Elf64_Ehdr* ehdr = (Elf64_Ehdr*)file;
+	if (memcmp(ehdr->e_ident, ELFMAG, SELFMAG) != 0)
+    {
+        munmap(file, file_size);
+        return 0;
+    }
+
+    Elf64_Shdr* shdrs = (Elf64_Shdr*)(file + ehdr->e_shoff);
+    Elf64_Shdr* shstrtab_hdr = &shdrs[ehdr->e_shstrndx];
+    const char* shstrtab = (const char*)(file + shstrtab_hdr->sh_offset);
+
+    uint64_t result = 0;
+
+    for (int i = 0; i < ehdr->e_shnum; ++i)
+    {
+        const char* name = shstrtab + shdrs[i].sh_name;
+        if (strcmp(name, section) == 0)
+        {
+            if (size_buffer)
+                *size_buffer = shdrs[i].sh_size;
+            result = base + shdrs[i].sh_addr;
+            break;
+        }
+    }
+
+	munmap(file, file_size);
+    return result;
+}
+
+static uint64_t PatternScanSection(const char* ida_pattern, const char* section)
+{
+    Pattern pattern;
+	BuildPattern(&pattern, ida_pattern);
+    uint64_t section_size = 0;
+    uint8_t* section_base = (uint8_t*)GetSectionAddress(section, &section_size);
+    if (!section_base || section_size < pattern.length)
+        return 0;
+
+    uint8_t occurrences = 0;
+    for (uint64_t i = 0; i <= section_size - pattern.length; i++)
+    {
+        for (uint16_t p = 0; p < pattern.length; p++)
+        {
+        	if (pattern.mask[p] == 'x' && section_base[i + p] != pattern.bytes[p])
+                goto next;
+        }
+        return (uint64_t)(section_base + i);
+        next:
+        continue;
+    }
+	return 0;
 }

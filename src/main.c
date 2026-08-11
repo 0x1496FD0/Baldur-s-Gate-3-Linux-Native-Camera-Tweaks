@@ -8,8 +8,10 @@
 #include "offsets.h"
 
 
-#define VERSION "1.0.1"
-#define GAME_BUILD "4.1.1.7209685"
+#define VERSION "1.0.21"
+//Tested Game build:
+	//4.1.1.7398727
+	//4.1.1.7209685
 
 #define ROLL_SENSITIVITY 2.f
 #define ZOOM_FACTOR 0.25f
@@ -19,7 +21,7 @@
 
 
 static pid_t g_pid = 0;
-static uint64_t g_base;
+static uint64_t g_game_build;
 
 static float* g_zoom;
 static float* g_roll;
@@ -40,20 +42,39 @@ static void (*O_SDL_SetRelativeMouseMode)(int) = NULL;
 
 typedef float (*CalculateCameraAngle_t)(void*, uint8_t);
 static CalculateCameraAngle_t O_CalculateCameraAngle;
+
 typedef uint8_t undefined8[8];
-typedef void (*SaveToInputConfigFile_t)(undefined8, undefined8, undefined8, undefined8, undefined8, undefined8,
+typedef void (*SaveToInputConfigFile_4117209685_t)(undefined8, undefined8, undefined8, undefined8, undefined8, undefined8,
 		undefined8, undefined8, long*, long*, mbstate_t, uint*, mbstate_t, undefined8);
-static SaveToInputConfigFile_t O_SaveToInputConfigFile;
+static SaveToInputConfigFile_4117209685_t O_SaveToInputConfigFile_4117209685;
+typedef void (*SaveToInputConfigFile_4117398727_t)(undefined8, long, undefined8);
+static SaveToInputConfigFile_4117398727_t O_SaveToInputConfigFile_4117398727;
 
 
-void H_SaveToInputConfigFile_CallSite(undefined8 p1, undefined8 p2, undefined8 p3, undefined8 p4, undefined8 p5, undefined8 p6,
-		undefined8 p7, undefined8 p8, long* p9, long* p10, mbstate_t p11, uint* p12, mbstate_t p13, undefined8 p14)
+void H_SaveToInputConfigFile_4117398727_CallSite(undefined8 p1, long p2, undefined8 p3)
 {
-	O_SaveToInputConfigFile(p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12, p13, p14);
+	O_SaveToInputConfigFile_4117398727(p1, p2, p3);
 
 	if (!LoadBindingsFromFile("~/.local/share/Larian Studios/Baldur's Gate 3/PlayerProfiles/Public/inputconfig_p1.json", &g_bs))
 	{
-    	fprintf(stderr, "\e[1;95m[LNCT]\e[0m ERR: H_SaveToInputConfigFile_CallSite(): Couldn't load ~/.local/share/Larian Studios/Baldur's Gate 3/PlayerProfiles/Public/inputconfig_p1.json\n");
+    	fprintf(stderr, "\e[1;95m[LNCT]\e[0m ERR: H_SaveToInputConfigFile_4117451994_CallSite(): Couldn't load ~/.local/share/Larian Studios/Baldur's Gate 3/PlayerProfiles/Public/inputconfig_p1.json\n");
+    	return;
+	}
+	g_binds[0] = (ActionBindings*)FindAction(&g_bs, "CameraToggleMouseRotate");
+	if (!g_binds[0])
+	{
+    	fprintf(stderr, "\e[1;95m[LNCT]\e[0m ERR: Can't find any bind(s) for action \"CameraToggleMouseRotate\" in ~/.local/share/Larian Studios/Baldur's Gate 3/PlayerProfiles/Public/inputconfig_p1.json\n");
+	}
+}
+
+void H_SaveToInputConfigFile_4117209685_CallSite(undefined8 p1, undefined8 p2, undefined8 p3, undefined8 p4, undefined8 p5, undefined8 p6,
+		undefined8 p7, undefined8 p8, long* p9, long* p10, mbstate_t p11, uint* p12, mbstate_t p13, undefined8 p14)
+{
+	O_SaveToInputConfigFile_4117209685(p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12, p13, p14);
+
+	if (!LoadBindingsFromFile("~/.local/share/Larian Studios/Baldur's Gate 3/PlayerProfiles/Public/inputconfig_p1.json", &g_bs))
+	{
+    	fprintf(stderr, "\e[1;95m[LNCT]\e[0m ERR: H_SaveToInputConfigFile_4117209685_CallSite(): Couldn't load ~/.local/share/Larian Studios/Baldur's Gate 3/PlayerProfiles/Public/inputconfig_p1.json\n");
     	return;
 	}
 	g_binds[0] = (ActionBindings*)FindAction(&g_bs, "CameraToggleMouseRotate");
@@ -127,7 +148,7 @@ float H_CalculateCameraAngle_CallSite(void* pCameraObject, uint8_t angle)
 
 uint8_t PatchUpdateCamera()
 {
-	void* movss = (void*)(g_base + Offsets.instr_roll_movss);
+	void* movss = (void*)GetAddresses()->roll_movss;
 	long page_size = sysconf(_SC_PAGESIZE);
 	uint64_t page_start = (uint64_t)movss & ~(page_size - 1);
 	size_t num_pages = (((uint64_t)movss + 8 - page_start) + page_size - 1) / page_size;
@@ -144,7 +165,7 @@ uint8_t PatchUpdateCamera()
 	memcpy(movss, nop, 8);
 	mprotect((void*)page_start, num_pages * page_size, PROT_READ | PROT_EXEC);
 
-	movss = (void*)(g_base + Offsets.instr_zoom_movss);
+	movss = (void*)GetAddresses()->zoom_movss;
 	page_start = (uint64_t)movss & ~(page_size - 1);
 	num_pages = (((uint64_t)movss + 6 - page_start) + page_size - 1) / page_size;
 	if (num_pages < 1)
@@ -166,7 +187,7 @@ uint8_t SetupCallSitesTrampoline()
 {
 	size_t page_size = sysconf(_SC_PAGESIZE);
 
-	void* callsite = (void*)(g_base + Offsets.CalculateCameraAngle_CallSite);
+	void* callsite = (void*)GetAddresses()->CalculateCameraAngle_CallSite;
 	void* trampoline = AllocNear(callsite, page_size);
 	if (!trampoline)
 	{
@@ -181,7 +202,7 @@ uint8_t SetupCallSitesTrampoline()
 		return 0;
 	}
 
-	callsite = (void*)(g_base + Offsets.SaveToInputConfigFile_CallSite);
+	callsite = (void*)GetAddresses()->SaveToInputConfigFile_CallSite;
 	trampoline = AllocNear(callsite, page_size);
 	if (!trampoline)
 	{
@@ -189,20 +210,63 @@ uint8_t SetupCallSitesTrampoline()
 		return 0;
 	}
 
-	if (!PatchCallSite(callsite, trampoline, H_SaveToInputConfigFile_CallSite))
+	if (g_game_build == 4117209685)
 	{
-		fprintf(stderr, "\e[1;95m[LNCT]\e[0m ERR: SetupCallSitesTrampoline(): PatchCallSite() failed for SaveToInputConfigFile()\n");
-		munmap(trampoline, page_size);
-		return 0;
+		if (!PatchCallSite(callsite, trampoline, H_SaveToInputConfigFile_4117209685_CallSite))
+		{
+			fprintf(stderr, "\e[1;95m[LNCT]\e[0m ERR: SetupCallSitesTrampoline(): PatchCallSite() failed for SaveToInputConfigFile_4117209685()\n");
+			munmap(trampoline, page_size);
+			return 0;
+		}
+	}
+	else
+	{
+		if (!PatchCallSite(callsite, trampoline, H_SaveToInputConfigFile_4117398727_CallSite))
+		{
+			fprintf(stderr, "\e[1;95m[LNCT]\e[0m ERR: SetupCallSitesTrampoline(): PatchCallSite() failed for SaveToInputConfigFile_4117451994()\n");
+			munmap(trampoline, page_size);
+			return 0;
+		}
 	}
 
 	return 1;
 }
 
+uint64_t FNV1a_Hash(const uint8_t* data, size_t len)
+{
+    uint64_t hash = 0xcbf29ce484222325ULL;
+    for (size_t i = 0; i < len; i++)
+    {
+        hash ^= data[i];
+        hash *= 0x100000001b3ULL;
+    }
+    return hash;
+}
+
+uint64_t GetBuild()
+{
+	size_t size;
+	uint8_t* file = MapSelfExe(&size);
+    uint64_t hash = FNV1a_Hash(file, size);
+    fprintf(stdout, "[LNCT] Binary FNV1a hash: %#lx (size: %zu)\n", hash, size);
+    munmap(file, size);
+	switch (hash)
+	{
+		case 0x59b4428151c778e5:
+			return 4117209685;
+		case 0x142d91e7bfe067cb:
+			return 4117398727;
+		default:
+			return 0;
+	}
+}
+
+
 void Setup()
 {
 	g_pid = getpid();
-	fprintf(stdout, "\e[1;95m[LNCT]\e[0m \e[1;37mLinux Native Camera Tweaks %s | Made for build %s\e[0m\n", VERSION, GAME_BUILD);
+
+	fprintf(stdout, "\e[1;95m[LNCT]\e[0m \e[1;37mLinux Native Camera Tweaks %s\e[0m\n", VERSION);
 	fprintf(stdout, "\e[1;95m[LNCT]\e[0m Bug(s) ? Suggestion(s) ? Add me on discord: biiinks78\n");
 
 	if (!LoadBindingsFromFile("~/.local/share/Larian Studios/Baldur's Gate 3/PlayerProfiles/Public/inputconfig_p1.json", &g_bs))
@@ -217,7 +281,32 @@ void Setup()
     	return;
 	}
 
-	g_base = GetModuleBase(0);
+	struct Sigs* sigs = GetSigs();
+	struct Addresses* addresses = GetAddresses();
+	addresses->CalculateCameraAngle_CallSite = PatternScanSection(sigs->CalculateCameraAngle_Callsite, ".text") + 39;
+	if (addresses->CalculateCameraAngle_CallSite == 39)
+	{
+		fprintf(stderr, "\e[1;95m[LNCT]\e[0m ERR: Setup(): Pattern scan failed : CalculateCameraAngle_CallSite\ngame update broke the pattern\n");
+		return;
+	}
+	addresses->SaveToInputConfigFile_CallSite = PatternScanSection(sigs->SaveToInputConfigFile_CallSite, ".text");
+	if (!addresses->SaveToInputConfigFile_CallSite)
+	{
+		fprintf(stderr, "\e[1;95m[LNCT]\e[0m ERR: Setup(): Pattern scan failed : SaveToInputConfigFile_CallSite\ngame update broke the pattern\n");
+		return;
+	}
+	addresses->roll_movss = PatternScanSection(sigs->roll_movss, ".text");
+	if (!addresses->roll_movss)
+	{
+		fprintf(stderr, "\e[1;95m[LNCT]\e[0m ERR: Setup(): Pattern scan failed : roll_movss\ngame update broke the pattern\n");
+		return;
+	}
+	addresses->zoom_movss = PatternScanSection(sigs->zoom_movss, ".text");
+	if (!addresses->zoom_movss)
+	{
+		fprintf(stderr, "\e[1;95m[LNCT]\e[0m ERR: Setup(): Pattern scan failed : zoom_movss\ngame update broke the pattern\n");
+		return;
+	}
 
 	if (!PatchUpdateCamera())
 	{
@@ -225,12 +314,15 @@ void Setup()
 		return;
 	}
 
-	O_CalculateCameraAngle = ResolveCallTarget((void*)(g_base + Offsets.CalculateCameraAngle_CallSite));
-	O_SaveToInputConfigFile = ResolveCallTarget((void*)(g_base + Offsets.SaveToInputConfigFile_CallSite));
+	O_CalculateCameraAngle = ResolveCallTarget((void*)(GetAddresses()->CalculateCameraAngle_CallSite));
+	if (g_game_build == 4117209685)
+		O_SaveToInputConfigFile_4117209685 = ResolveCallTarget((void*)(GetAddresses()->SaveToInputConfigFile_CallSite));
+	else
+		O_SaveToInputConfigFile_4117398727 = ResolveCallTarget((void*)(GetAddresses()->SaveToInputConfigFile_CallSite));
 
 	if (!SetupCallSitesTrampoline())
 	{
-		fprintf(stderr, "\e[1;95m[LNCT]\e[0m ERR: Setup(): SetupCallSitesTrampoline() failed, please double check your game build and compare it to whats shown compatible on the nexus page\n");
+		fprintf(stderr, "\e[1;95m[LNCT]\e[0m ERR: Setup(): SetupCallSitesTrampoline() failed\n");
 		return;
 	}
 
